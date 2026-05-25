@@ -4,7 +4,7 @@
 WORKDIR="$(pwd)"
 RELEASE_DIR="$WORKDIR/artifacts"
 
-KERNEL_NAME="dark-ds-kernel"
+KERNEL_NAME="zblack-kernel"
 USER="ahmed-alnassif"
 HOST="GKI-Duchamp"
 TIMEZONE="Asia/Damascus"
