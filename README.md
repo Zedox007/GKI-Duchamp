@@ -1,9 +1,9 @@
 # GKID Kernel
 
 [![Build Status](https://github.com/ahmed-alnassif/GKI-Duchamp/actions/workflows/build.yml/badge.svg)](https://github.com/ahmed-alnassif/GKI-Duchamp/actions/workflows/build.yml)
-[![Latest Release](https://img.shields.io/github/v/release/ahmed-alnassif/GKI-Duchamp?label=Latest%20Release&color=00aa00)](https://github.com/ahmed-alnassif/GKI-Duchamp/releases)
-[![Downloads](https://img.shields.io/github/downloads/ahmed-alnassif/GKI-Duchamp/total?label=Downloads&color=00aa00)](https://github.com/ahmed-alnassif/GKI-Duchamp/releases)
-[![GitHub License](https://img.shields.io/github/license/ahmed-alnassif/GKI-Duchamp?logo=gnu)](/LICENSE)
+[![Latest Release](https://img.shields.io/github/v/release/Zedox007/GKI-Duchamp?label=Latest%20Release&color=00aa00)](https://github.com/Zedox007/GKI-Duchamp/releases)
+[![Downloads](https://img.shields.io/github/downloads/Zedox007/GKI-Duchamp/total?label=Downloads&color=00aa00)](https://github.com/Zedox007/GKI-Duchamp/releases)
+[![GitHub License](https://img.shields.io/github/license/Zedox007/GKI-Duchamp?logo=gnu)](/LICENSE)
 ![KernelSU](https://img.shields.io/badge/KernelSU-built--in-success)
 [![SukiSU Ultra](https://img.shields.io/badge/SukiSU--Ultra-built--in-success)](https://github.com/SukiSU-Ultra/SukiSU-Ultra)
 ![Wild KSU](https://img.shields.io/badge/Wild--KSU-built--in-success)
@@ -93,6 +93,41 @@ Enhance your device with these companion modules:
     *(Note: Only tested on the Poco X6 Pro. Please exercise caution on other devices.)*
 
 ## ⬇️ Downloads
-Find the latest builds for all variants in the [Releases](https://github.com/ahmed-alnassif/GKI-Duchamp/releases) section.
+Find the latest builds for all variants in the [Releases](https://github.com/Zedox007/GKI-Duchamp/releases) section.
 
 [![Star History Chart](https://api.star-history.com/svg?repos=ahmed-alnassif/GKI-Duchamp&type=date&legend=top-left)](https://www.star-history.com/#star-history/star-history&type=date&legend=top-left)
+
+---
+
+## Local Build (arm64 container)
+
+**Arch:**
+```bash
+pacman -Syu --noconfirm base-devel git python bc bison flex cpio libelf pahole perl wget curl zip unzip clang lld ccache
+pip install lxml --break-system-packages
+```
+
+**Debian:**
+```bash
+apt-get update && apt-get install -y git bc bison flex libssl-dev libelf-dev dwarves cpio build-essential clang lld ccache python3-pip pahole
+pip3 install lxml --break-system-packages
+```
+
+```bash
+git clone https://github.com/Zedox007/GKI-Duchamp
+cd GKI-Duchamp
+chmod +x run_build.sh py/kmi-check-6.x.py
+bash run_build.sh
+```
+
+Output zip will be in the working directory.
+
+Edit `run_build.sh` to change build options:
+
+| Variable | Default | Values |
+|---|---|---|
+| `KSU` | `KSUN` | `KSUN` `KSU` `SKSU` `RSKSU` `no` |
+| `KSU_SUSFS` | `false` | `true` `false` |
+| `KSU_COMPAT` | `false` | `true` `false` |
+| `STATUS` | `BETA` | `BETA` `RELEASE` |
+| `KERNEL_REPO` | ahmed-alnassif/android_kernel_common-6.1 | any GKI 6.1 repo URL |

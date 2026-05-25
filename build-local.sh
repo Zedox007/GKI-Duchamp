@@ -1,0 +1,406 @@
+#!/usr/bin/env bash
+
+# Constants
+WORKDIR="$(pwd)"
+RELEASE_DIR="$WORKDIR/artifacts"
+
+KERNEL_NAME="dark-ds-kernel"
+USER="ahmed-alnassif"
+HOST="GKI-Duchamp"
+TIMEZONE="Asia/Damascus"
+ANYKERNEL_REPO="https://github.com/ahmed-alnassif/AK3-GKID"
+
+KERNEL_DEFCONFIG="gki_defconfig"
+KERNEL_BRANCH="a14-6.1"
+
+# Set timezone
+sudo timedatectl set-timezone "$TIMEZONE" || export TZ="$TIMEZONE"
+
+RELEASE="$(date +v%y.%m.%d)${RUN_NUM}"
+
+mkdir -p $RELEASE_DIR
+
+GKI_RELEASES_REPO="https://github.com/ahmed-alnassif/GKI-Duchamp"
+AK3_ZIP_NAME="$KERNEL_NAME-REL-KVER-VARIANT-BUILD_DATE.zip"
+OUTDIR="$WORKDIR/out"
+KSRC="$WORKDIR/ksrc"
+KERNEL_PATCHES="$WORKDIR/kernel-patches"
+
+# Import functions
+source $WORKDIR/functions.sh
+
+echo "RELEASE_REPO=$(simplify_gh_url "$GKI_RELEASES_REPO")" >> $GITHUB_ENV
+echo "KERNEL_NAME=${KERNEL_NAME}${RUN_NUM}" >> $GITHUB_ENV
+echo "RELEASE_NAME=$KERNEL_NAME $RELEASE" >> $GITHUB_ENV
+echo "RELEASE=$RELEASE" >> $GITHUB_ENV
+
+# Logging
+BUILD_LOGS="$RELEASE_DIR/build.log"
+exec > >(tee -a "$BUILD_LOGS") 2>&1
+
+trap 'echo "=== SCRIPT EXIT at $(date) ===" >> "$BUILD_LOGS"' EXIT
+trap 'echo "!!! ERROR at line $LINENO: [[$BASH_COMMAND]]" >> "$BUILD_LOGS"' ERR
+trap 'echo "!!! Received SIGTERM at $(date) - possible GitHub kill" >> "$BUILD_LOGS"' TERM
+trap 'echo "!!! Received SIGINT at $(date)" >> "$BUILD_LOGS"' INT
+
+# Clone kernel source
+log "Cloning kernel source from $(simplify_gh_url "$KERNEL_REPO")"
+git clone -q --depth=1 "$KERNEL_REPO" -b "$KERNEL_BRANCH" "$KSRC"
+
+cd $KSRC
+LINUX_VERSION=$(make kernelversion)
+LINUX_VERSION_CODE=${LINUX_VERSION//./}
+DEFCONFIG_FILE=$(find ./arch/arm64/configs -name "$KERNEL_DEFCONFIG")
+echo "LINUX_VERSION=$LINUX_VERSION" >> $GITHUB_ENV
+cd $WORKDIR
+
+# Set Kernel variant
+log "Setting Kernel variant..."
+case "$KSU" in
+  "SKSU") VARIANT="SukiSU-Ultra" ;;
+  "RSKSU") VARIANT="ReSukiSU" ;;
+  "KSU") VARIANT="KernelSU" ;;
+  "KSUN") VARIANT="KernelSU-Next" ;;
+  "no") VARIANT="Vanilla" ;;
+  *) VARIANT="Vanilla" ;;
+esac
+susfs_included && VARIANT+="+SuSFS"
+SUSFS_URL="https://gitlab.com/simonpunk/susfs4ksu"
+SUSFS_DIR="$WORKDIR/susfs"
+SUSFS_PATCHES="${SUSFS_DIR}/kernel_patches"
+SUSFS_BRANCH="gki-android14-6.1"
+SUSFS_PATCH="gki-android14-6.1"
+
+#log "Changelog of repos"
+#gh api "repos/ahmed-alnassif/android_kernel_common-6.1/commits?sha=${KERNEL_BRANCH}&per_page=10" --jq '.[] | "- [" + .sha[0:7] + "](" + .html_url + ") " + (.commit.message | split("\n")[0])'\
+#> "$RELEASE_DIR/android_kernel-6.1_changelog.txt"
+#gh api 'repos/tiann/KernelSU/commits?sha=main&per_page=10' --jq '.[] | "- [" + .sha[0:7] + "](" + .html_url + ") " + (.commit.message | split("\n")[0])'\
+#> "$RELEASE_DIR/ksu_changelog.txt"
+#gh api 'repos/SukiSU-Ultra/SukiSU-Ultra/commits?sha=builtin&per_page=10' --jq '.[] | "- [" + .sha[0:7] + "](" + .html_url + ") " + (.commit.message | split("\n")[0])'\
+#> "$RELEASE_DIR/sukisu_changelog.txt"
+#gh api 'repos/pershoot/KernelSU-Next/commits?sha=dev-susfs&per_page=10' --jq '.[] | "- [" + .sha[0:7] + "](" + .html_url + ") " + (.commit.message | split("\n")[0])'\
+#> "$RELEASE_DIR/ksun_changelog.txt"
+
+# Download Clang
+log "Using system Clang..."
+
+# ccache configuration
+export CCACHE_DIR="$HOME/.ccache"
+export CC="ccache clang"
+export CXX="ccache clang++"
+export CCACHE_BASEDIR="$WORKDIR"
+export CCACHE_COMPILERCHECK=content
+
+ccache --max-size=5G
+ccache --set-config=sloppiness="pch_defines,time_macros,file_macro,include_file_mtime,include_file_ctime"
+ccache --set-config=hash_dir=false
+ccache --set-config=base_dir="$WORKDIR"
+ccache --set-config=compiler_check=content
+
+# Extract clang version
+COMPILER_STRING=$(clang -v 2>&1 | head -n 1 | sed 's/(https..*//' | sed 's/ version//')
+echo "COMPILER_STRING=$COMPILER_STRING" >> $GITHUB_ENV
+
+cd $KSRC
+
+log "Applying common performance patches"
+patch -p1 --fuzz=3 < "$KERNEL_PATCHES/common/optimized_mem_operations.patch"
+patch -p1 --fuzz=3 < "$KERNEL_PATCHES/common/file_struct_8bytes_align.patch"
+patch -p1 --fuzz=3 < "$KERNEL_PATCHES/common/reduce_cache_pressure.patch"
+patch -p1 --fuzz=3 < "$KERNEL_PATCHES/common/mem_opt_prefetch.patch"
+
+log "Applying architecture optimizations"
+patch -p1 --fuzz=3 < "$KERNEL_PATCHES/common/optimise_memcmp.patch"
+
+log "Applying network, I/O & power management patches"
+patch -p1 --fuzz=3 < "$KERNEL_PATCHES/common/minimise_wakeup_time.patch"
+patch -p1 --fuzz=3 < "$KERNEL_PATCHES/common/int_sqrt.patch"
+patch -p1 --fuzz=3 < "$KERNEL_PATCHES/common/force_tcp_nodelay.patch"
+patch -p1 --fuzz=3 < "$KERNEL_PATCHES/common/reduce_gc_thread_sleep_time.patch"
+patch -p1 --fuzz=3 < "$KERNEL_PATCHES/common/add_timeout_wakelocks_globally.patch"
+patch -p1 --fuzz=3 < "$KERNEL_PATCHES/common/f2fs_reduce_congestion.patch"
+patch -p1 --fuzz=3 < "$KERNEL_PATCHES/common/reduce_freeze_timeout.patch"
+patch -p1 --fuzz=3 < "$KERNEL_PATCHES/common/f2fs_enlarge_min_fsync_blocks.patch"
+
+log "Applying clear page alignment"
+patch -p1 --fuzz=3 < "$KERNEL_PATCHES/common/clear_page_16bytes_align.patch"
+
+log "Applying CPU frequency & scheduler patches"
+patch -p1 --fuzz=3 < "$KERNEL_PATCHES/common/add_limitation_scaling_min_freq.patch"
+patch -p1 --fuzz=3 < "$KERNEL_PATCHES/common/re_write_limitation_scaling_min_freq.patch"
+patch -p1 --fuzz=3 < "$KERNEL_PATCHES/common/adjust_cpu_scan_order.patch"
+patch -p1 --fuzz=3 < "$KERNEL_PATCHES/common/avoid_extra_s2idle_wake_attempts.patch"
+patch -p1 --fuzz=3 < "$KERNEL_PATCHES/common/disable_cache_hot_buddy.patch"
+
+log "Applying filesystem & network tuning"
+patch -p1 --fuzz=3 < "$KERNEL_PATCHES/common/increase_ext4_default_commit_age.patch"
+patch -p1 --fuzz=3 < "$KERNEL_PATCHES/common/increase_sk_mem_packets.patch"
+patch -p1 --fuzz=3 < "$KERNEL_PATCHES/common/reduce_pci_pme_wakeups.patch"
+
+log "Applying log silencing patches"
+patch -p1 --fuzz=3 < "$KERNEL_PATCHES/common/silence_irq_cpu_logspam.patch"
+patch -p1 --fuzz=3 < "$KERNEL_PATCHES/common/silence_system_logspam.patch"
+patch -p1 --fuzz=3 < "$KERNEL_PATCHES/common/use_unlikely_wrap_cpufreq.patch"
+
+log "Applying unicode_bypass_fix_6.1.patch"
+patch -p1 --fuzz=3 < "$KERNEL_PATCHES/common/unicode_bypass_fix_6.1.patch"
+
+log "Applying Droidspaces kABI patch"
+patch -p1 --fuzz=3 < "$KERNEL_PATCHES/droidspaces/ds_sysvipc.patch"
+
+log "Applying BBRv3 patches"
+patch -p1 --fuzz=3 < $KERNEL_PATCHES/bbrv3/bbrv3.patch
+
+log "BBG included"
+wget -qO- "https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh" | bash
+sed -i '/^config LSM$/,/^help$/{ /^[[:space:]]*default/ { /baseband_guard/! s/selinux/selinux,baseband_guard/ } }' "security/Kconfig"
+
+if [ "$KSU" = "SKSU" ]; then
+  log "SukiSU-Ultra included"
+  if susfs_included; then
+    #install_ksu "ahmed-alnassif/SukiSU-Ultra" "builtin"
+    install_ksu "SukiSU-Ultra/SukiSU-Ultra" "builtin"
+  else
+    install_ksu "SukiSU-Ultra/SukiSU-Ultra" "main"
+  fi
+
+  if susfs_included; then
+    log "SUSFS included"
+    git clone --depth=1 -q "$SUSFS_URL" -b "$SUSFS_BRANCH" "$SUSFS_DIR"
+
+    cp -R $SUSFS_PATCHES/fs/* ./fs
+    cp -R $SUSFS_PATCHES/include/linux/* ./include/linux/
+
+    patch -p1 --fuzz=3 < "$KERNEL_PATCHES/susfs/fs_namespace.patch"
+    patch -p1 --fuzz=3 < $SUSFS_PATCHES/50_add_susfs_in_${SUSFS_PATCH}.patch || echo "Common kernel SUSFS patch failed."
+
+    SUSFS_VERSION=$(grep -E '^#define SUSFS_VERSION' ./include/linux/susfs.h | cut -d' ' -f3 | sed 's/"//g')
+    echo "SUSFS_VERSION=$SUSFS_VERSION" >> $GITHUB_ENV
+
+  fi
+
+fi
+
+if susfs_included && [ "$KSU" = "RSKSU" ]; then
+  log "ReSukiSU included"
+  install_ksu "ReSukiSU/ReSukiSU" "main"
+
+  log "SUSFS included"
+  git clone --depth=1 -q "$SUSFS_URL" -b "$SUSFS_BRANCH" "$SUSFS_DIR"
+
+  cp -R $SUSFS_PATCHES/fs/* ./fs
+  cp -R $SUSFS_PATCHES/include/linux/* ./include/linux/
+
+  patch -p1 --fuzz=3 < "$KERNEL_PATCHES/susfs/fs_namespace.patch"
+  patch -p1 --fuzz=3 < $SUSFS_PATCHES/50_add_susfs_in_${SUSFS_PATCH}.patch || echo "Common kernel SUSFS patch failed."
+
+  SUSFS_VERSION=$(grep -E '^#define SUSFS_VERSION' ./include/linux/susfs.h | cut -d' ' -f3 | sed 's/"//g')
+  echo "SUSFS_VERSION=$SUSFS_VERSION" >> $GITHUB_ENV
+
+fi
+
+if [ "$KSU" = "KSU" ]; then
+  log "KernelSU included"
+  if ! susfs_included; then
+    install_ksu "tiann/KernelSU" "main"
+  fi
+
+  if susfs_included; then
+    VARIANT+="+Multiple-Managers"
+    git clone "https://github.com/tiann/KernelSU" && echo "[+] Repository cloned."
+    log "SUSFS included"
+    git clone --depth=1 -q "$SUSFS_URL" -b "$SUSFS_BRANCH" "$SUSFS_DIR"
+
+    cd KernelSU
+    #git reset --hard "61c6313"
+    git reset --soft HEAD~1
+    patch -p1 --fuzz=3 < "$WORKDIR/patches/0001-feat-avc-log-spoofing.patch"
+    patch -p1 --fuzz=3 < "$WORKDIR/patches/0001-feat-add-multiple-managers.patch"
+    patch -p1 --fuzz=3 < "$WORKDIR/patches/0001-feat-throne_tracker-offload-to-kthread.patch"
+    patch -p1 --fuzz=3 < "$SUSFS_PATCHES/KernelSU/10_enable_susfs_for_ksu.patch"
+    patch -p1 --fuzz=3 < "$WORKDIR/patches/0001-feat-escape-persistent_allow_list-to-kthread.patch"
+    patch -p1 --fuzz=3 < "$WORKDIR/patches/0001-feat-supercalls-allow-userspace-to-pull-list-entries.patch"
+    sed -i "/    git pull && echo \"\[+\] Repository updated.\"/d" "kernel/setup.sh"
+    git config --global user.email "mr.ahmed.nassif@gmail.com"
+    git config --global user.name "Ahmed Al-Nassif"
+    git add .
+    git commit -m "susfs patch"
+    cd ..
+    bash "KernelSU/kernel/setup.sh" "main"
+
+    cp -R $SUSFS_PATCHES/fs/* ./fs
+    cp -R $SUSFS_PATCHES/include/linux/* ./include/linux/
+
+    patch -p1 --fuzz=3 < "$KERNEL_PATCHES/susfs/fs_namespace.patch"
+    patch -p1 --fuzz=3 < $SUSFS_PATCHES/50_add_susfs_in_${SUSFS_PATCH}.patch || echo "Common kernel SUSFS patch failed."
+
+    SUSFS_VERSION=$(grep -E '^#define SUSFS_VERSION' ./include/linux/susfs.h | cut -d' ' -f3 | sed 's/"//g')
+    echo "SUSFS_VERSION=$SUSFS_VERSION" >> $GITHUB_ENV
+
+  fi
+
+fi
+
+if [ "$KSU" = "KSUN" ]; then
+  log "KernelSU-Next included"
+  if susfs_included; then
+    install_ksu "pershoot/KernelSU-Next" "dev-susfs"
+  else
+    install_ksu "KernelSU-Next/KernelSU-Next" "dev"
+  fi
+
+  if susfs_included; then
+    log "SUSFS included"
+    git clone --depth=1 -q "$SUSFS_URL" -b "$SUSFS_BRANCH" "$SUSFS_DIR"
+
+    cp -R $SUSFS_PATCHES/fs/* ./fs
+    cp -R $SUSFS_PATCHES/include/linux/* ./include/linux/
+
+    patch -p1 --fuzz=3 < "$KERNEL_PATCHES/susfs/fs_namespace.patch"
+    patch -p1 --fuzz=3 < $SUSFS_PATCHES/50_add_susfs_in_${SUSFS_PATCH}.patch || echo "Common kernel SUSFS patch failed."
+
+    SUSFS_VERSION=$(grep -E '^#define SUSFS_VERSION' ./include/linux/susfs.h | cut -d' ' -f3 | sed 's/"//g')
+    echo "SUSFS_VERSION=$SUSFS_VERSION" >> $GITHUB_ENV
+
+  fi
+
+fi
+
+if [ "$KSU_COMPAT" = "true" ]; then
+  VARIANT="Compat+${VARIANT}"
+fi
+
+# Replace Placeholder in zip name
+AK3_ZIP_NAME=${AK3_ZIP_NAME//KVER/$LINUX_VERSION}
+AK3_ZIP_NAME=${AK3_ZIP_NAME//VARIANT/$VARIANT}
+
+log "Patching custom configs..."
+source $WORKDIR/patches/gki_defconfig.sh
+
+# set localversion
+if [ "${TODO:-kernel}" = "kernel" ]; then
+  LATEST_COMMIT_HASH=$(git rev-parse --short HEAD)
+  if [ "$STATUS" = "BETA" ]; then
+    SUFFIX="$LATEST_COMMIT_HASH"
+  else
+    SUFFIX="${RELEASE}/${LATEST_COMMIT_HASH}"
+  fi
+  config --set-str CONFIG_LOCALVERSION "-$KERNEL_NAME/$SUFFIX"
+  config --disable CONFIG_LOCALVERSION_AUTO
+  sed -i 's/echo "+"/# echo "+"/g' scripts/setlocalversion
+fi
+
+# Declare needed variables
+export KBUILD_BUILD_USER="$USER"
+export KBUILD_BUILD_HOST="$HOST"
+export KBUILD_BUILD_TIMESTAMP=$(git -C $KSRC log -1 --format=%cd --date=format-local:'%a %b %d %T %z %Y')
+export KCFLAGS="-w"
+MAKE_ARGS=(
+  LLVM=1
+  LLVM_IAS=1
+  ARCH=arm64
+  -j$(nproc --all)
+  O=$OUTDIR
+)
+
+KERNEL_IMAGE="$OUTDIR/arch/arm64/boot/Image"
+MODULE_SYMVERS="$OUTDIR/Module.symvers"
+KMI_CHECK="$WORKDIR/py/kmi-check-6.x.py"
+
+## Build GKI
+log "Generating config..."
+make ${MAKE_ARGS[@]} "$KERNEL_DEFCONFIG"
+
+
+# SUSFS debugging
+if susfs_included; then
+
+  log "=== DEBUG: Checking defconfig for SUSFS ==="
+  grep -i susfs ./arch/arm64/configs/gki_defconfig || echo "❌ SUSFS NOT FOUND in defconfig!"
+  echo ""
+
+  # DEBUG: Check if SUSFS made it to .config
+  log "=== DEBUG: Checking .config for SUSFS ==="
+  grep CONFIG_KSU_SUSFS $OUTDIR/.config || echo "❌ SUSFS NOT ENABLED in .config!"
+  grep CONFIG_KSU_SUSFS_SUS_MAP $OUTDIR/.config || echo "❌ SUSFS_SUS_MAP not enabled!"
+  echo ""
+
+  # If SUSFS is in defconfig but not in .config, check dependencies
+  if grep -q "CONFIG_KSU_SUSFS" ./arch/arm64/configs/gki_defconfig && ! grep -q "CONFIG_KSU_SUSFS=y" $OUTDIR/.config; then
+    log "⚠️ SUSFS in defconfig but not in .config - checking dependencies..."
+    grep "depends on" $(find . -name "Kconfig" -exec grep -l "KSU_SUSFS" {} \;) 2>/dev/null || echo "No dependency info found"
+  fi
+
+fi
+
+# Test
+if [ "$TEST" = "yes" ]; then
+  log pipeline test done
+  mkdir -p "$RELEASE_DIR"
+  echo "test-${VARIANT}" > "$RELEASE_DIR/test-${VARIANT}.zip"
+  exit 0
+fi
+
+if [[ $TODO == "defconfig" ]]; then
+  log "Copying defconfig..."
+  mkdir -p "$RELEASE_DIR"
+  cp "$OUTDIR/.config" "$RELEASE_DIR/config-${VARIANT}.txt"
+  exit 0
+fi
+
+# Build the actual kernel
+log "Building kernel..."
+make ${MAKE_ARGS[@]}
+
+# Check KMI Function symbol
+$KMI_CHECK "$KSRC/android/abi_gki_aarch64.stg" "$MODULE_SYMVERS" || true
+
+
+# Return to the initial working directory (Post-compiling steps))
+cd $WORKDIR
+
+# Clone AnyKernel
+log "Cloning anykernel from $(simplify_gh_url "$ANYKERNEL_REPO")"
+git clone -q --depth=1 $ANYKERNEL_REPO anykernel
+
+# Set kernel string in anykernel
+if [ $STATUS == "BETA" ]; then
+  BUILD_DATE=$(date -d "$KBUILD_BUILD_TIMESTAMP" +"%Y%m%d-%H%M")
+  AK3_ZIP_NAME=${AK3_ZIP_NAME//BUILD_DATE/$BUILD_DATE}
+  AK3_ZIP_NAME=${AK3_ZIP_NAME//-REL/}
+  sed -i \
+    "s/kernel.string=.*/kernel.string=${KERNEL_NAME} ${LINUX_VERSION} (${BUILD_DATE}) ${VARIANT} by Ahmed Al-Nassif (ahmed-alnassif)/g" \
+    $WORKDIR/anykernel/anykernel.sh
+else
+  AK3_ZIP_NAME=${AK3_ZIP_NAME//-BUILD_DATE/}
+  AK3_ZIP_NAME=${AK3_ZIP_NAME//REL/$RELEASE}
+  sed -i \
+    "s/kernel.string=.*/kernel.string=${KERNEL_NAME} ${RELEASE} ${LINUX_VERSION} ${VARIANT} by Ahmed Al-Nassif (ahmed-alnassif)/g" \
+    $WORKDIR/anykernel/anykernel.sh
+fi
+
+# Zip the anykernel
+cd anykernel
+log "Zipping anykernel..."
+if [ ! -f "$KERNEL_IMAGE" ];then
+  echo "$KERNEL_IMAGE not found."
+  exit 1
+fi
+cp "$KERNEL_IMAGE" .
+zip -r9 "$WORKDIR/$AK3_ZIP_NAME" ./*
+cd $OLDPWD
+
+if [ "$STATUS" != "BETA" ]; then
+  echo "BASE_NAME=$KERNEL_NAME-$VARIANT" >> $GITHUB_ENV
+  mkdir -p $RELEASE_DIR
+  mv $WORKDIR/*.zip $RELEASE_DIR
+fi
+
+if [ "$STATUS" != "BETA" ]; then
+  (
+    echo "LINUX_VERSION=$LINUX_VERSION"
+    echo "SUSFS_VERSION=$(curl -s "$SUSFS_URL"/raw/gki-android14-6.1/kernel_patches/include/linux/susfs.h | grep -E '^#define SUSFS_VERSION' | cut -d' ' -f3 | sed 's/"//g')"
+    echo "KERNEL_NAME=$KERNEL_NAME"
+    echo "RELEASE_REPO=$(simplify_gh_url "$GKI_RELEASES_REPO")"
+  ) >> $RELEASE_DIR/info.txt
+fi
