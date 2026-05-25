@@ -4,7 +4,7 @@
 WORKDIR="$(pwd)"
 RELEASE_DIR="$WORKDIR/artifacts"
 
-KERNEL_NAME="zblack-kernel"
+KERNEL_NAME="duchamp-kernel"
 USER="ahmed-alnassif"
 HOST="GKI-Duchamp"
 TIMEZONE="Asia/Damascus"
