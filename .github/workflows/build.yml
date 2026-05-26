@@ -346,6 +346,8 @@ jobs:
             - Unicode filename validation → prevents crashes from invalid UTF-8 on vfat/exfat
             - Silenced IRQ & system log spam → cleaner dmesg, easier debugging
             - BBG (baseband-guard) a lightweight **LSM (Linux Security Module)** for the Android kernel, designed to block unauthorized writes to critical partitions/device nodes at the system level. This reduces the risk of malicious or accidental tampering with critical components such as the baseband and boot chain.
+            - **Droidspaces** — Linux container support
+            - **NTSync** — NT kernel sync primitives for Wine/Proton compatibility
 
             >[!Tip]
             >Follow the next instructions to switch between Westwood+ and BBRv3
