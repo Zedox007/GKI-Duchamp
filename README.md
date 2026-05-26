@@ -62,8 +62,8 @@ A feature-rich Generic Kernel Image (GKI) kernel built for the **Poco X6 Pro (Du
 
 *   **🛡️ SUSFS Integration:** Advanced kernel-level hiding and spoofing capabilities (available in dedicated variants)
 *   **🔒 Baseband Guard (BBG):** Lightweight LSM that blocks unauthorized writes to critical partitions and device nodes, protecting the baseband and boot chain from tampering
-*   **🐧 Droidspaces:** Linux container support for running full Linux environments on Android.
-*   **⚡ NTSync:** High-performance NT kernel synchronization primitives for Wine/Proton compatibility.
+*   **🐧 Droidspaces:** Linux container support for Android
+*   **⚡ NTSync:** NT sync primitives for Wine/Proton
 
 ## ⭐ Support the Development
 

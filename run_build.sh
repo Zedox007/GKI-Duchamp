@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Local build wrapper — sets CI env vars for building outside GitHub Actions
+# Local build wrapper - sets CI env vars for local builds
 
 export GITHUB_ENV=$(mktemp)
 export KERNEL_REPO="https://github.com/ahmed-alnassif/android_kernel_common-6.1"
