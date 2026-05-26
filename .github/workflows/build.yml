@@ -1,5 +1,8 @@
 name: GKI-Duchamp Builder
 
+permissions:
+  contents: write
+
 on:
   workflow_call:
     inputs:
