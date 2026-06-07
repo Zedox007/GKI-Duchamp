@@ -84,7 +84,7 @@ gh api 'repos/pershoot/KernelSU-Next/commits?sha=dev-susfs&per_page=10' --jq '.[
 # Download Clang
 log "Downloading Clang..."
 CLANG_BIN="$WORKDIR/greenforce-clang/bin"
-wget -qO- "https://raw.githubusercontent.com/greenforce-project/greenforce_clang/refs/heads/main/get_clang.sh" | bash &> /dev/null
+wget -qO- "https://raw.githubusercontent.com/greenforce-project/greenforce_clang/refs/heads/main/get_clang.sh" | bash
 if [ ! -d "$CLANG_BIN" ]; then
     echo "Error: Clang not found in ${CLANG_BIN}."
     exit 1
