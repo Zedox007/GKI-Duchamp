@@ -84,7 +84,7 @@ gh api 'repos/pershoot/KernelSU-Next/commits?sha=dev-susfs&per_page=10' --jq '.[
 # Download Clang
 log "Downloading Clang..."
 CLANG_BIN="$WORKDIR/greenforce-clang/bin"
-CLANG_URL=$(curl -s "https://api.github.com/repos/greenforce-project/greenforce_clang/releases/latest" | grep "browser_download_url" | grep "23.0.0" | head -1 | cut -d'"' -f4) && mkdir -p "$WORKDIR/greenforce-clang" && wget -qO- "$CLANG_URL" | tar -xz -C "$WORKDIR/greenforce-clang" --strip-components=1
+wget -qO- "https://github.com/greenforce-project/greenforce_clang/releases/download/20260601/gf-clang-23.0.0-20260601.tar.gz" | tar -xz -C "$WORKDIR/greenforce-clang" --strip-components=1
 if [ ! -d "$CLANG_BIN" ]; then
     echo "Error: Clang not found in ${CLANG_BIN}."
     exit 1
